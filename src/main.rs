@@ -27,8 +27,41 @@ fn main() {
                 cursor_grab,
             ),
         )
-        .add_systems(Update, (move_player, change_fov))
+        .add_systems(Update, (move_player, change_fov, keyboard_input))
         .run();
+}
+
+#[derive(Debug, Component)]
+struct RelativeDirection(Vec3);
+
+fn keyboard_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    player: Query<(&Transform, &mut RelativeDirection), With<Player>>,
+) {
+    if let Ok((transform, mut relative_dir)) = player.get_single() {
+        let mut direction = Vec3::ZERO;
+        // forward
+        if keys.pressed(KeyCode::KeyW) {
+            direction += *transform.forward()
+        }
+
+        // back
+        if keys.pressed(KeyCode::KeyS) {
+            direction += *transform.back();
+        }
+
+        // left
+        if keys.pressed(KeyCode::KeyA) {
+            direction += *transform.left();
+        }
+
+        // right
+        if keys.pressed(KeyCode::KeyD) {
+            direction += *transform.right();
+        }
+
+        relative_dir = &RelativeDirection(direction);
+    }
 }
 
 fn cursor_grab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
@@ -70,13 +103,27 @@ struct WorldModelCamera;
 
 fn move_player(
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
-    mut player: Query<(&mut Transform, &CameraSensitivity), With<Player>>,
+    mut player: Query<
+        (
+            &mut Transform,
+            &mut LinearVelocity,
+            &CameraSensitivity,
+            &RelativeDirection,
+        ),
+        With<Player>,
+    >,
 ) {
-    let Ok((mut transform, camera_sensitivity)) = player.get_single_mut() else {
+    let Ok((mut transform, mut linear_velocity, camera_sensitivity, relative_direction)) =
+        player.get_single_mut()
+    else {
         return;
     };
+
+    linear_velocity.x += relative_direction.0.x;
+    linear_velocity.y += relative_direction.0.y;
+    linear_velocity.z += relative_direction.0.z;
+
     let delta = accumulated_mouse_motion.delta;
-    println!("{delta:?}");
 
     if delta != Vec2::ZERO {
         // Note that we are not multiplying by delta_time here.
@@ -171,7 +218,10 @@ fn spawn_view_model(
     commands
         .spawn((
             Player,
+            RelativeDirection(Vec3::ZERO),
             CameraSensitivity::default(),
+            RigidBody::Kinematic,
+            Collider::capsule(0.5, 1.5),
             Transform::from_xyz(0.0, 1.0, 0.0),
             Visibility::default(),
         ))
